@@ -1,4 +1,5 @@
-const http = require('http')
+const http = require('http');
+const Stream = require('stream');
 const server = http.createServer();
 const WebSocket = require('ws');
 const wss = new WebSocket.Server({ server });
@@ -52,9 +53,72 @@ wss.on('connection', (conn) =>{
                 });
             }
         }
+
+        if(msg.type === 'streamer:offer')
+        {
+            const client = clients.get(parseInt(msg.clientId));
+            if(client)
+            {
+                send(client.conn, {
+                    type:   'offer',
+                    device: msg.device,
+                    data:   msg.data
+                });
+            }
+        }
+
+        if(msg.type === 'client:answer')
+        {
+            const streamer = streamers.get(msg.device);
+            if(streamer)
+            {
+                send(streamer.conn, {
+                    type:       'sdp',
+                    device:     msg.device,
+                    clientId:   conn._clientId,
+                    data:       msg.data
+                });
+            }
+        }
+
+        if(msg.type === 'streamer:ice')
+        {
+            const client = clients.get(parseInt(msg.clientId));
+            if(client)
+            {
+                send(client.conn, {
+                    type:   'ice',
+                    data:   msg.data
+                });
+            }
+        }
+
+        if(msg.type === 'client:ice')
+        {
+            const streamer = streamers.get(msg.device);
+            if(streamer)
+            {
+                send(streamer.conn, {
+                    type:       'ice',
+                    device:     msg.device,
+                    clientId:   conn._clientId,
+                    data:       msg.data
+                });
+            }
+        }
     });
 
     conn.on('close', () => {
+        // cleanup
+        clients.forEach((v, k)   => { 
+            if (v.conn === conn) 
+                clients.delete(k); 
+            });
+        
+            streamers.forEach((v, k) => { 
+            if (v.conn === conn) 
+                streamers.delete(k); 
+            });
         console.log('[server] Connection closed');
     })
 });
