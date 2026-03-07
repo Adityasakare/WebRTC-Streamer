@@ -44,4 +44,23 @@ function handleMessage(msg)
         loginDiv.style.display = 'none';
         camerasDiv.style.display = 'block';
     }
+
+    if(msg.type === 'camera:list')
+    {
+        const list = document.getElementById('cameraList');
+        list.innerHTML = '';
+        msg.cameras.forEach(cam => {
+            const btn = document.createElement('button');
+            btn.innerText = 'Watch ' + cam.device;
+            btn.onclick = () => requestStream(cam.device);
+            list.appendChild(btn);
+        });
+    }
 }
+
+function requestStream(device)
+{
+    log('Requesting stream: ' + device);
+    ws.send(JSON.stringify({type: 'client:request_stream', device}));
+}
+
