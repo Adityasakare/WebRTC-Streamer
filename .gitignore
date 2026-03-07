@@ -1,0 +1,7 @@
+build/
+*.o
+*.a
+Webrtc-Streamer
+recordings/
+*.mp4
+*.mkv
