@@ -3,6 +3,10 @@ const server = http.createServer();
 const WebSocket = require('ws');
 const wss = new WebSocket.Server({ server });
 
+const streamers = new Map();    // device -> {conn, username};
+const clients   = new Map();    // id     -> {conn, username};
+let nextId      = 1;
+
 server.listen(57778, () => {
     console.log('[Server] Listening on port 57778');
 });
@@ -12,7 +16,23 @@ wss.on('connection', (conn) =>{
 
     conn.on('message', (data) => {
         const msg = JSON.parse(data);
-        console.log('[server] Connection closed');
+        console.log('[server] type=' + msg.type);
+
+        if(msg.type === 'streamer:register'){
+            streamers.set(msg.device, {conn, username: msg.username});
+            console.log('[server] Streamer registered device=' + msg.device);
+            send(conn, {type: 'server:registered'});
+        }
     });
+
+    conn.on('close', () => {
+        console.log('[server] Connection closed');
+    })
 });
 
+
+// helper function to send JSON
+function send(conn, obj)
+{
+    conn.send(JSON.stringify(obj));
+}
