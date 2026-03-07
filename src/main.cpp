@@ -4,6 +4,36 @@
 
 static GMainLoop* g_loop = nullptr;
 
+static gboolean onBusMessage(GstBus*, GstMessage* msg, gpointer)
+{
+    switch (GST_MESSAGE_TYPE(msg)) 
+    {
+        case GST_MESSAGE_ERROR: 
+        {
+            GError* err = nullptr;
+            gchar*  dbg = nullptr;
+            gst_message_parse_error(msg, &err, &dbg);
+            Logger::getInstance().log(LogLevel::ERROR,
+                "Pipeline error: %s | %s", err->message, dbg ? dbg : "");
+            g_error_free(err);
+            g_free(dbg);
+            if (g_loop) 
+                g_main_loop_quit(g_loop);
+            break;
+        }
+        case GST_MESSAGE_EOS:
+            Logger::getInstance().log(LogLevel::INFO, "Pipeline EOS");
+            if (g_loop) 
+                g_main_loop_quit(g_loop);
+            break;
+        default:
+            break;
+    }
+    return TRUE;
+}
+
+
+
 static void buildRecordPipeline(const std::string& device)
 {
     GError* err = nullptr;
@@ -26,6 +56,10 @@ static void buildRecordPipeline(const std::string& device)
         g_error_free(err);
         return;
     }
+
+    GstBus* bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline));
+    gst_bus_add_watch(bus, onBusMessage, nullptr);
+    gst_object_unref(bus);
 
     gst_element_set_state(pipeline, GST_STATE_PLAYING);
     Logger::getInstance().log(LogLevel::INFO, "Recording for 5 seconds...");
