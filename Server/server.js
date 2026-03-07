@@ -39,6 +39,19 @@ wss.on('connection', (conn) =>{
             send(conn, {type: 'camera:list', cameras: list});
         }
 
+        if(msg.type === 'client:request_stream')
+        {
+            const streamer = streamers.get(msg.device);
+            if(streamer)
+            {
+                console.log('[server] Client ' + conn._clientId + ' requested ' + msg.device);
+                send(streamer.conn, {
+                    type:       'signal',
+                    device:     msg.device,
+                    clientId:   conn._clientId
+                });
+            }
+        }
     });
 
     conn.on('close', () => {
