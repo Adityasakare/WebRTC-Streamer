@@ -18,11 +18,27 @@ wss.on('connection', (conn) =>{
         const msg = JSON.parse(data);
         console.log('[server] type=' + msg.type);
 
-        if(msg.type === 'streamer:register'){
+        if(msg.type === 'streamer:register')
+        {
             streamers.set(msg.device, {conn, username: msg.username});
             console.log('[server] Streamer registered device=' + msg.device);
             send(conn, {type: 'server:registered'});
         }
+
+        if(msg.type === 'client:register')
+        {
+            const id = nextId++;
+            clients.set(id, {conn, username: msg.username});
+            conn._clientId = id;
+            console.log('[server] CLient registred: id=' + id);
+            send(conn, {type: 'server:registered', clientId: id});
+
+            // send current camera list to the client
+            const list = [];
+            streamers.forEach((v, device) => list.push({device, username: v.username}));
+            send(conn, {type: 'camera:list', cameras: list});
+        }
+
     });
 
     conn.on('close', () => {
