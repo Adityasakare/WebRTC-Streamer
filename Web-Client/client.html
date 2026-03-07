@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CCTV Viewer</title>
+</head>
+<body>
+    <h2>CCTV Viewer</h2>
+
+    <div id="login">
+        <input id="username" type="text" placeholder="Your name" />
+        <button id="btnConnect">Connect</button>
+    </div>
+
+    <div id="cameras" style="display:none">
+        <h3>Available Cameras</h3>
+        <div id="cameraList"></div>
+    </div>
+
+    <div id="stream" style="display:none">
+        <video id="video" autoplay muted playsinline
+               width="640" height="480" controls></video>
+    </div>
+
+    <div id="status"></div>
+</body>
+</html>
