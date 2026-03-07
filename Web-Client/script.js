@@ -1,3 +1,5 @@
+let pc = null;
+let currentDevice = null;
 let ws = null;
 let myClientId = null;
 
@@ -56,6 +58,28 @@ function handleMessage(msg)
             list.appendChild(btn);
         });
     }
+
+    if (msg.type === 'offer') 
+    {
+        currentDevice = msg.device;
+        createPeerConnection();
+
+        pc.setRemoteDescription(new RTCSessionDescription(msg.data))
+        .then(() => pc.createAnswer())
+        .then(answer => pc.setLocalDescription(answer))
+        .then(() => {
+          ws.send(JSON.stringify({
+              type:   'client:answer',
+              device: currentDevice,
+              data:   pc.localDescription
+          }));
+          log('Answer sent');
+      });
+    }
+
+    
+
+
 }
 
 function requestStream(device)
@@ -64,3 +88,27 @@ function requestStream(device)
     ws.send(JSON.stringify({type: 'client:request_stream', device}));
 }
 
+function createPeerConnection() 
+{
+    pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+
+    pc.ontrack = (event) => {
+        const video = document.getElementById('video');
+        video.srcObject = event.streams[0];
+        document.getElementById('stream').style.display = 'block';
+        log('Stream playing');
+    };
+
+    pc.onicecandidate = (event) => {
+        if (event.candidate) 
+        {
+            ws.send(JSON.stringify({
+                type:   'client:ice',
+                device: currentDevice,
+                data:   event.candidate
+            }));
+        }
+    };
+}
