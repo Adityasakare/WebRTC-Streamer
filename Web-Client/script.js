@@ -77,8 +77,13 @@ function handleMessage(msg)
       });
     }
 
-    
-
+    if (msg.type === 'ice') 
+    {
+        if (pc && msg.data) 
+        {
+            pc.addIceCandidate(new RTCIceCandidate(msg.data));
+        }
+    }
 
 }
 
