@@ -1,15 +1,14 @@
+#include <gst/gst.h>
 #include "../include/Logger.h"
 
-int main(void)
+int main(int argc, char* argv[])
 {
+    gst_init(&argc, &argv);
     Logger& logger = Logger::getInstance();
 
-    logger.log(LogLevel::INFO,"Hello from %s", __FILE__);
-    logger.log(LogLevel::WARNING, "Test warning %d", 42);
-    logger.log(LogLevel::ERROR, "Test error %s", "oops");
-    logger.log(LogLevel::WARNING, "The END");
+    logger.log(LogLevel::INFO,"Gstremer Version %s", gst_version_string());
 
-    return 0;
+    gst_deinit();
 
     return 0;
 }
