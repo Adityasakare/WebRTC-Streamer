@@ -30,9 +30,23 @@ private:
 
     CameraConfig                         m_config;
     std::map<std::string, WebRTCStream*> m_streams;
+
+    void connectToServer();
+    void registerWithServer();
+
+    
+
 public:
-    WebRTCApp();
+    WebRTCApp(const std::string& confFile,
+              const std::string& serverUrl,
+              const std::string& userName);
     ~WebRTCApp();
+
+    WebRTCApp(const WebRTCApp&)            = delete;
+    WebRTCApp& operator=(const WebRTCApp&) = delete;
+
+    void run(void);
+    static gboolean reconnectCb(gpointer userData);
 };
 
 
