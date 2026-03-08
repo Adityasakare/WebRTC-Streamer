@@ -109,11 +109,14 @@ function createPeerConnection()
     pc.onicecandidate = (event) => {
         if (event.candidate) 
         {
+            console.log('Sending ICE candidate', event.candidate);
             ws.send(JSON.stringify({
                 type:   'client:ice',
                 device: currentDevice,
                 data:   event.candidate
             }));
-        }
+        }else {
+        console.log('ICE gathering complete'); 
+    }
     };
 }
