@@ -1,3 +1,6 @@
+#ifndef LOGGER_H
+#define LOGGER_H
+
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -31,3 +34,7 @@ public:
     static Logger& getInstance();
     void log(LogLevel level, const char* msg, ...);
 };
+
+
+
+#endif
