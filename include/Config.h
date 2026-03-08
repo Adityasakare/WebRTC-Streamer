@@ -14,7 +14,7 @@
 
 // ====================== Recording Settings ======================
 #define RECORDING_DIR           "recordings/"
-#define RECORDING_CHUNKS_SECS   30
+#define RECORDING_CHUNKS_SECS   6
 
 // ============== WebRTC stream encoding (low latency) ==============
 #define H264_BITRATE_KBPS    1000   

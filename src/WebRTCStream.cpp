@@ -81,9 +81,10 @@ void WebRTCStream::buildPipeline(void)
     time_t now = time(nullptr);
     char ts[32];
     strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", localtime(&now));
-    char recPath[256];
-    snprintf(recPath, sizeof(recPath), "%s/%s_%s_%%05d.mp4", RECORDING_DIR, devId.c_str(), ts);
-
+    
+    char recDir[256];
+    snprintf(recDir, sizeof(recDir), "%s/%s_%s", RECORDING_DIR, devId.c_str(), ts);
+    g_mkdir_with_parents(recDir, 0755);
 
     char desc[4056];
         snprintf(desc, sizeof(desc),
@@ -103,16 +104,22 @@ void WebRTCStream::buildPipeline(void)
         " %s. ! queue max-size-buffers=10 leaky=downstream ! "
         " rtph264pay config-interval=-1 pt=%d aggregate-mode=zero-latency name=%s "
         " %s. ! queue max-size-buffers=300 leaky=downstream ! "
-        " splitmuxsink location=%s max-size-time=%" G_GUINT64_FORMAT
-        " muxer-factory=mp4mux send-keyframe-requests=false async-finalize=true ",
+        " hlssink2 location=%s/segment_%%05d.ts "
+        " playlist-location=%s/playlist.m3u8 "
+        " target-duration=%d "
+        " playlist-length=0 "
+        " max-files=0 ",
+        
+        
         webrtcName.c_str(), STUN_SERVER,
         m_devicePath.c_str(),
         VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FRAMERATE,
         H264_BITRATE_KBPS, H264_KEY_INT_MAX,
         teeName.c_str(),
         teeName.c_str(), RTP_PAYLOAD_TYPE, payName.c_str(),
-        teeName.c_str(), recPath,
-        (guint64)RECORDING_CHUNKS_SECS * GST_SECOND);
+        
+        teeName.c_str(), recDir, recDir,
+        RECORDING_CHUNKS_SECS);
 
         GError* err = nullptr;
         m_pipeline = gst_parse_launch(desc, &err);
@@ -169,7 +176,7 @@ void WebRTCStream::buildPipeline(void)
         }
 
         m_pipelineReady = true;
-        Logger::getInstance().log(LogLevel::INFO, "[%s] Pipeline PLAYING - Recording to %s", m_displayName.c_str(), recPath);
+        //Logger::getInstance().log(LogLevel::INFO, "[%s] Pipeline PLAYING - Recording to %s", m_displayName.c_str(), recPath);
 }
 
 
