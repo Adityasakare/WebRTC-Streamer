@@ -15,6 +15,7 @@ add_executable(webrtc-streamer
     src/main.cpp
     src/Logger.cpp
     src/WebRTCStream.cpp
+    src/WebRTCApp.cpp
 )
 
 target_compile_definitions(webrtc-streamer PRIVATE GST_USE_UNSTABLE_API)
