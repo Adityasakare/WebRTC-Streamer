@@ -198,3 +198,9 @@ void WebRTCApp::onWebsocketMessage_s(SoupWebsocketConnection* c, SoupWebsocketDa
 { 
     static_cast<WebRTCApp*>(ud)->onWebsocketMessage(c, d, m); 
 }
+
+void WebRTCApp::quit()
+{
+    if(m_loop)
+        g_main_loop_quit(m_loop);
+}

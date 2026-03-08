@@ -24,6 +24,7 @@ static void onSignal(int)
     Logger::getInstance().log(LogLevel::INFO, "Shutting down...");
     if (g_app) 
     {
+        g_app->quit();
         delete g_app;
         g_app = nullptr;
         exit(0);

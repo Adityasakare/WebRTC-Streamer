@@ -38,7 +38,7 @@ void WebRTCStream::stop(void)
         gst_element_send_event(m_pipeline, gst_event_new_eos());
 
         GstBus* bus = gst_pipeline_get_bus(GST_PIPELINE(m_pipeline));
-        GstMessage* msg = gst_bus_timed_pop_filtered(bus, 5 * GST_SECOND,
+        GstMessage* msg = gst_bus_timed_pop_filtered(bus, 0 * GST_SECOND,
                     (GstMessageType)(GST_MESSAGE_EOS | GST_MESSAGE_ERROR));
 
         if(msg)
@@ -60,6 +60,8 @@ void WebRTCStream::stop(void)
     m_pipeline = nullptr;
     m_pipelineReady = false;
     m_pendingClientId.clear();
+
+    Logger::getInstance().log(LogLevel::INFO, "[%s] Pipeline stopped", m_displayName.c_str());
 }
 
 void WebRTCStream::buildPipeline(void)

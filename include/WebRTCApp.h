@@ -54,6 +54,7 @@ public:
 
     void run(void);
     static gboolean reconnectCb(gpointer userData);
+    void quit();
 };
 
 
