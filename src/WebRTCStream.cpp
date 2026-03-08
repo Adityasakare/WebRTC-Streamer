@@ -158,4 +158,32 @@ void WebRTCStream::buildPipeline(void)
 }
 
 
+void WebRTCStream::linkPayloaderToWebrtcbin(const std::string& devId, const std::string& payName)
+{
+    GstElement* pay = gst_bin_get_by_name(GST_BIN(m_pipeline), payName.c_str());
+    if(!pay)
+    {
+        Logger::getInstance().log(LogLevel::ERROR, "[%s] payloader not found", m_displayName.c_str());
+        return;
+    }
+
+    GstPad* src = gst_element_get_static_pad(pay, "src");
+    GstPad* sink = gst_element_request_pad_simple(m_webrtcbin, "sink_%u");
+
+    if(src && sink)
+    {
+        if(gst_pad_link(src, sink) == GST_PAD_LINK_OK)
+            Logger::getInstance().log(LogLevel::INFO, "[%s] payloader linked to webrtcbin", m_displayName.c_str());
+        else
+            Logger::getInstance().log(LogLevel::ERROR, "[%s] pad link failed", m_displayName.c_str());
+    }
+    
+    if(src)
+        gst_object_unref(src);
+
+    if(sink)
+        gst_object_unref(sink);
+    gst_object_unref(pay);
+}
+
 
