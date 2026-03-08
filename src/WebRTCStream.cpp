@@ -1,6 +1,9 @@
 #include "../include/WebRTCStream.h"
 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Constructor
+// Stores camera identity and shared resources (WebSocket connection, GMainLoop).
+// ─────────────────────────────────────────────────────────────────────────────
 WebRTCStream::WebRTCStream(const std::string& devicePath,
                  const std::string& displayName,
                  const std::string& userName,
@@ -19,12 +22,18 @@ WebRTCStream::WebRTCStream(const std::string& devicePath,
     Logger::getInstance().log(LogLevel::INFO, "[%s] Stream created - waiting for viewer", m_displayName.c_str());
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Destructor — goes to stop() to ensure pipeline is always shut down.
+// ─────────────────────────────────────────────────────────────────────────────
 WebRTCStream::~WebRTCStream()
 {
     stop();
 }
 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// stop()
+// Gracefully shut down the GStreamer pipeline:
+// ─────────────────────────────────────────────────────────────────────────────
 void WebRTCStream::stop(void)
 {
     if(!m_pipeline)
@@ -63,7 +72,11 @@ void WebRTCStream::stop(void)
 
     Logger::getInstance().log(LogLevel::INFO, "[%s] Pipeline stopped", m_displayName.c_str());
 }
-
+// ─────────────────────────────────────────────────────────────────────────────
+// buildPipeline()
+// Constructs and starts the full GStreamer pipeline for this camera.
+// Pipeline topology (single encoder, tee splits to two sinks)
+// ─────────────────────────────────────────────────────────────────────────────
 void WebRTCStream::buildPipeline(void)
 {
     // Extract device id from path: /dev/video0 -> video0
@@ -77,6 +90,7 @@ void WebRTCStream::buildPipeline(void)
     std::string teeName = "tee_" + devId;
 
     // Recording file pattern
+    // Create a per-session recording directory named  recordings/video0_YYYYMMDD_HHMMSS/
     g_mkdir_with_parents(RECORDING_DIR, 0755);
     time_t now = time(nullptr);
     char ts[32];
@@ -131,6 +145,7 @@ void WebRTCStream::buildPipeline(void)
             return;
         }
 
+        // Retrieve webrtcbin by name so we can connect signals and link pads.
         m_webrtcbin = gst_bin_get_by_name(GST_BIN(m_pipeline), webrtcName.c_str());
         if(!m_webrtcbin)
         {
@@ -142,9 +157,10 @@ void WebRTCStream::buildPipeline(void)
         }
         
         gst_element_set_state(m_pipeline, GST_STATE_READY);
-       linkPayloaderToWebrtcbin(devId, payName);
+        linkPayloaderToWebrtcbin(devId, payName);
 
         // Bus watch
+        // Register the bus watch BEFORE going to PLAYING
         GstBus* bus = gst_pipeline_get_bus(GST_PIPELINE(m_pipeline));
         gst_bus_add_watch(bus, onBusMessage_s, this);
         gst_object_unref(bus);
@@ -158,20 +174,23 @@ void WebRTCStream::buildPipeline(void)
             g_array_unref(trans);
         }
 
+        // Connect WebRTC signals before going to PLAYING
         g_signal_connect(m_webrtcbin, "on-negotiation-needed", G_CALLBACK(onNegotiationNeeded_s), this);
         g_signal_connect(m_webrtcbin, "on-ice-candidate", G_CALLBACK(onIceCandidate_s), this);
 
         GstStateChangeReturn sc = gst_element_set_state(m_pipeline, GST_STATE_PLAYING);
-/////////////////////////////////////////////////////////////////////////////////////
+
         Logger::getInstance().log(LogLevel::INFO,
         "[%s] State change result: %s", m_displayName.c_str(),
         sc == GST_STATE_CHANGE_ASYNC   ? "ASYNC" :
         sc == GST_STATE_CHANGE_SUCCESS ? "SUCCESS" :
         sc == GST_STATE_CHANGE_NO_PREROLL ? "NO_PREROLL" : "FAILURE");
-///////////////////////////////////////////////////////////////////////////////////
+
         if(sc == GST_STATE_CHANGE_FAILURE)
         {
             Logger::getInstance().log(LogLevel::ERROR, "[%s] Pipeline failed to reach PLAYING", m_devicePath.c_str());
+            m_pipelineReady = true;
+            stop();
             return;
         }
 
@@ -179,7 +198,10 @@ void WebRTCStream::buildPipeline(void)
         //Logger::getInstance().log(LogLevel::INFO, "[%s] Pipeline PLAYING - Recording to %s", m_displayName.c_str(), recPath);
 }
 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// linkPayloaderToWebrtcbin()
+// Manually links the rtph264pay src pad to a dynamically requested sink pad on webrtcbin.
+// ─────────────────────────────────────────────────────────────────────────────
 void WebRTCStream::linkPayloaderToWebrtcbin(const std::string& devId, const std::string& payName)
 {
     GstElement* pay = gst_bin_get_by_name(GST_BIN(m_pipeline), payName.c_str());
@@ -208,6 +230,11 @@ void WebRTCStream::linkPayloaderToWebrtcbin(const std::string& devId, const std:
     gst_object_unref(pay);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// onNegotiationNeeded()
+// Called by webrtcbin when it is ready to begin SDP negotiation.
+// Creates an SDP offer asynchronously; the result is delivered to onOfferCreated() via the GstPromise change callback.
+// ─────────────────────────────────────────────────────────────────────────────
 void WebRTCStream::onNegotiationNeeded(void)
 {
     Logger::getInstance().log(LogLevel::INFO, "[%s] Negotiation needed - creating offer for client=%s", m_displayName.c_str(), 
@@ -217,6 +244,13 @@ void WebRTCStream::onNegotiationNeeded(void)
     g_signal_emit_by_name(m_webrtcbin, "create-offer", nullptr, p);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// onOfferCreated()
+// Receives the completed SDP offer from webrtcbin.
+//   1. Sets the offer as the local description (required before sending).
+//   2. Serialises the SDP to a JSON message and sends it to the signalling
+//      server, which forwards it to the waiting browser client.
+// ─────────────────────────────────────────────────────────────────────────────
 void WebRTCStream::onOfferCreated(GstPromise* promise)
 {
     GstWebRTCSessionDescription* offer = nullptr;
@@ -224,6 +258,7 @@ void WebRTCStream::onOfferCreated(GstPromise* promise)
     gst_structure_get(reply, "offer", GST_TYPE_WEBRTC_SESSION_DESCRIPTION, &offer, nullptr);
     gst_promise_unref(promise);
 
+     // Set local description first — webrtcbin needs this to start ICE gathering.
     GstPromise* local = gst_promise_new();
     g_signal_emit_by_name(m_webrtcbin, "set-local-description", offer, local);
     gst_promise_interrupt(local);
@@ -231,6 +266,7 @@ void WebRTCStream::onOfferCreated(GstPromise* promise)
 
     gchar* sdpStr = gst_sdp_message_as_text(offer->sdp);
 
+    // Build: { type:"streamer:offer", device, username, clientId, data:{type,sdp} }
     JsonObject* dataObj = json_object_new();
     json_object_set_string_member(dataObj, "type", "offer");
     json_object_set_string_member(dataObj, "sdp", sdpStr);
@@ -249,8 +285,14 @@ void WebRTCStream::onOfferCreated(GstPromise* promise)
     Logger::getInstance().log(LogLevel::INFO, "[%s] Offer sent to client=%s", m_displayName.c_str(), m_pendingClientId.c_str());
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// onIceCandidate()
+// Called by webrtcbin each time a local ICE candidate is gathered.
+// Sends the candidate to the signalling server so the browser can add it to its RTCPeerConnection
+// ─────────────────────────────────────────────────────────────────────────────
 void WebRTCStream::onIceCandidate(guint mlineIndex, const gchar* candidate)
 {
+     // Build: { type:"streamer:ice", device, clientId, data:{sdpMLineIndex, candidate} }
     JsonObject* dataObj = json_object_new();
     json_object_set_int_member   (dataObj, "sdpMLineIndex", mlineIndex);
     json_object_set_string_member(dataObj, "candidate", candidate);
@@ -266,7 +308,21 @@ void WebRTCStream::onIceCandidate(guint mlineIndex, const gchar* candidate)
         "[%s] Sending ICE candidate mline=%u", m_displayName.c_str(), mlineIndex);
 }
 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// handleMessage()
+// Entry point for all signalling messages routed to this stream by WebRTCApp.
+// Parses the JSON and dispatches to the appropriate handler:
+//
+//   "signal"  — a browser has requested this stream. If the pipeline is not
+//               yet running, build it now. If already running (a second viewer),
+//               create a new offer for the new client without restarting the pipeline.
+//
+//   "sdp"     — the browser's SDP answer to our offer. Apply it as the remote
+//               description so ICE can proceed and media can flow.
+//
+//   "ice"     — a remote ICE candidate from the browser. Add it to webrtcbin
+//               so connectivity checks can proceed.
+// ─────────────────────────────────────────────────────────────────────────────
 void WebRTCStream::handleMessage(const std::string& json)
 {
     JsonParser* parser = json_parser_new();
@@ -315,10 +371,14 @@ void WebRTCStream::handleMessage(const std::string& json)
     // Dispatch
     if(type =="signal")
     {
+        // A new viewer has requested this camera.
         if(!clientId.empty())
             m_pendingClientId = clientId;
         if(!m_pipelineReady)
+        {
+            // First viewer — build and start the full pipeline.
             buildPipeline();
+        }
         else
         {
             GstPromise* p = gst_promise_new_with_change_func(onOfferCreated_s, this, nullptr);
@@ -327,6 +387,7 @@ void WebRTCStream::handleMessage(const std::string& json)
     }
     else if(type == "sdp")
     {
+        // Browser answered our offer — apply as remote description
         GstSDPMessage* sdpMsg = nullptr;
         gst_sdp_message_new(&sdpMsg);
         gst_sdp_message_parse_buffer((guint8*)sdp.c_str(), sdp.size(), sdpMsg);
@@ -341,12 +402,17 @@ void WebRTCStream::handleMessage(const std::string& json)
     }
     else if(type == "ice")
     {
+        // Remote ICE candidate from the browser — add to webrtcbin
         if(!iceCandidate.empty())
             g_signal_emit_by_name(m_webrtcbin, "add-ice-candidate", (guint)sdpMLineIndex, iceCandidate.c_str());
     }
         
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SendJson()
+// Serialises a JsonObject to a UTF-8 string and sends it over the WebSocket.
+// ─────────────────────────────────────────────────────────────────────────────
 void WebRTCStream::SendJson(JsonObject* root)
 {
     JsonNode* node = json_node_init_object(json_node_alloc(), root);
@@ -361,6 +427,10 @@ void WebRTCStream::SendJson(JsonObject* root)
     json_node_free(node);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// onBusMessage()
+// GStreamer bus watch callback — receives pipeline-level messages.
+// ─────────────────────────────────────────────────────────────────────────────
 gboolean WebRTCStream::onBusMessage(GstBus*, GstMessage* msg)
 {
     switch (GST_MESSAGE_TYPE(msg))
@@ -392,8 +462,13 @@ gboolean WebRTCStream::onBusMessage(GstBus*, GstMessage* msg)
     return TRUE;
 }
 
-// Gstreamer callbacks - these forwarded to class methods
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Static GStreamer / GLib callbacks
+// GLib signal system requires plain C function pointers. These static wrappers
+// recover the WebRTCStream* from the user-data pointer and forward to the
+// corresponding instance method.
+// ─────────────────────────────────────────────────────────────────────────────
 void WebRTCStream::onNegotiationNeeded_s(GstElement*, gpointer ud)
 {
     static_cast<WebRTCStream*>(ud)->onNegotiationNeeded();

@@ -1,6 +1,10 @@
 #include "../include/WebRTCApp.h"
 #include "../include/WebRTCStream.h"
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Constructor
+// Loads the camera config file. 
+// ─────────────────────────────────────────────────────────────────────────────
 WebRTCApp::WebRTCApp(const std::string& confFile,
               const std::string& serverUrl,
               const std::string& userName)
@@ -14,7 +18,10 @@ WebRTCApp::WebRTCApp(const std::string& confFile,
 }
 
 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Destructor
+// Stops all active camera pipelines, releases the WebSocket connection, and unrefs the GMainLoop. 
+// ─────────────────────────────────────────────────────────────────────────────
 WebRTCApp::~WebRTCApp()
 {
     for(auto& kv : m_streams)
@@ -36,6 +43,11 @@ WebRTCApp::~WebRTCApp()
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// run()
+// Creates the GLib main loop, initiates the first connection attempt, then
+// blocks in g_main_loop_run() until quit() is called (e.g. from SIGINT).
+// ─────────────────────────────────────────────────────────────────────────────
 void WebRTCApp::run(void)
 {
     m_loop = g_main_loop_new(nullptr, FALSE);
@@ -44,6 +56,11 @@ void WebRTCApp::run(void)
     g_main_loop_run(m_loop);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// connectToServer()
+// Initiates an async WebSocket upgrade request to the signalling server.
+// Result is delivered to onServerConnected() via onServerConnected_s callback.
+// ─────────────────────────────────────────────────────────────────────────────
 void WebRTCApp::connectToServer(void)
 {
     Logger::getInstance().log(LogLevel::INFO, "WebRTCApp: connecting to %s", m_serverUrl.c_str());
@@ -55,7 +72,11 @@ void WebRTCApp::connectToServer(void)
                                     reinterpret_cast<GAsyncReadyCallback>(onServerConnected_s), this);
 }
 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// registerWithServer()
+// Sends a "streamer:register" message for every configured camera so the
+// signalling server knows which devices this process serves.
+// ─────────────────────────────────────────────────────────────────────────────
 void WebRTCApp::registerWithServer(void)
 {
     for(auto& cam : m_config.Cameras())
@@ -85,6 +106,10 @@ void WebRTCApp::registerWithServer(void)
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// onWebsocketMessage()
+// Dispatches incoming signalling messages from the server.
+// ─────────────────────────────────────────────────────────────────────────────
 void WebRTCApp::onWebsocketMessage(SoupWebsocketConnection*,SoupWebsocketDataType dtype, GBytes* message)
 {
     if(dtype == SOUP_WEBSOCKET_DATA_BINARY)
@@ -131,6 +156,10 @@ void WebRTCApp::onWebsocketMessage(SoupWebsocketConnection*,SoupWebsocketDataTyp
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// onServerConnected()
+// Async completion callback for the WebSocket calls registerWithServer().
+// ─────────────────────────────────────────────────────────────────────────────
 void WebRTCApp::onServerConnected(SoupSession* session, GAsyncResult* res)
 {
     GError* err = nullptr;
@@ -152,7 +181,11 @@ void WebRTCApp::onServerConnected(SoupSession* session, GAsyncResult* res)
     registerWithServer();
 }
 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// onWebsocketClosed()
+// Stops all active camera pipelines (viewers will lose the stream), releases
+// the connection object.
+// ─────────────────────────────────────────────────────────────────────────────
 void WebRTCApp::onWebsocketClosed(void)
 {
     Logger::getInstance().log(LogLevel::WARNING, "WebRTCApp: connection closed");
@@ -162,12 +195,18 @@ void WebRTCApp::onWebsocketClosed(void)
         g_object_unref(m_wsConn);
         m_wsConn = nullptr;
     }
+    // Stop all pipelines — without a signalling connection
     for(auto& kv : m_streams)
         kv.second->stop();
     
     scheduleReconnect();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// scheduleReconnect()
+// Implements a simple reconnect: wait RECONNECT_DELAY_MS * attempt_number
+// milliseconds before trying again.
+// ─────────────────────────────────────────────────────────────────────────────
 void WebRTCApp::scheduleReconnect(void)
 {
     ++m_reconnectCount;
@@ -183,6 +222,9 @@ gboolean WebRTCApp::reconnectCb(gpointer ud)
     return FALSE;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Static GLib signal callbacks — recover the WebRTCApp* and forward.
+// ─────────────────────────────────────────────────────────────────────────────
 void WebRTCApp::onServerConnected_s(SoupSession* s, GAsyncResult* r, gpointer ud)
 {
     static_cast<WebRTCApp*>(ud)->onServerConnected(s, r);
