@@ -85,3 +85,116 @@ void WebRTCApp::registerWithServer(void)
     }
 }
 
+void WebRTCApp::onWebsocketMessage(SoupWebsocketConnection*,SoupWebsocketDataType dtype, GBytes* message)
+{
+    if(dtype == SOUP_WEBSOCKET_DATA_BINARY)
+    {
+        g_bytes_unref(message);
+        return;
+    }
+
+    gsize size;
+    gconstpointer raw = g_bytes_get_data(message, &size);
+    std::string json(static_cast<const char*>(raw), size);
+    g_bytes_unref(message);
+
+    JsonParser* parser = json_parser_new();
+    if(!json_parser_load_from_data(parser, json.c_str(), -1, nullptr))
+    {
+        g_object_unref(parser);
+        return;
+    }
+
+    JsonObject* root = json_node_get_object(json_parser_get_root(parser));
+
+    std::string type;
+    std::string dev;
+
+    if(json_object_has_member(root, "type"))
+        type = json_object_get_string_member(root, "type");
+    if(json_object_has_member(root, "device"))
+        dev = json_object_get_string_member(root, "device");
+
+    g_object_unref(parser);
+
+    if(type == "server:registered")
+    {
+        Logger::getInstance().log(LogLevel::INFO, "WebRTCApp: server acknowledge registration");
+        return;
+    }
+
+    if(!dev.empty())
+    {
+        auto it = m_streams.find(dev);
+        if(it != m_streams.end())
+            it->second->handleMessage(json);
+    }
+}
+
+void WebRTCApp::onServerConnected(SoupSession* session, GAsyncResult* res)
+{
+    GError* err = nullptr;
+    m_wsConn = soup_session_websocket_connect_finish(session, res, &err);
+    if(err)
+    {
+        Logger::getInstance().log(LogLevel::ERROR, "WebRTCApp: connect failed: %s", err->message);
+        g_error_free(err);
+        scheduleReconnect();
+        return;
+    }
+
+    Logger::getInstance().log(LogLevel::INFO, "WebRTCApp: connected to signaling server");
+    m_reconnectCount = 0;
+
+    g_signal_connect(m_wsConn, "closed", G_CALLBACK(onWebsocketClosed_s), this);
+    g_signal_connect(m_wsConn, "message", G_CALLBACK(onWebsocketMessage_s), this);
+
+    registerWithServer();
+}
+
+
+void WebRTCApp::onWebsocketClosed(void)
+{
+    Logger::getInstance().log(LogLevel::WARNING, "WebRTCApp: connection closed");
+
+    if(m_wsConn)
+    {
+        g_object_unref(m_wsConn);
+        m_wsConn = nullptr;
+    }
+    for(auto& kv : m_streams)
+        kv.second->stop();
+    
+    scheduleReconnect();
+}
+
+void WebRTCApp::scheduleReconnect(void)
+{
+    ++m_reconnectCount;
+    int delay = RECONNECT_DELAY_MS * m_reconnectCount;
+
+    Logger::getInstance().log(LogLevel::WARNING, "WebRTCApp: reconnecting in %d ms (attempt %d)", delay, m_reconnectCount);
+    g_timeout_add(delay, reconnectCb, this);
+}
+
+gboolean WebRTCApp::reconnectCb(gpointer ud)
+{
+    static_cast<WebRTCApp*>(ud)->connectToServer();
+    return FALSE;
+}
+
+void WebRTCApp::onServerConnected_s(SoupSession* s, GAsyncResult* r, gpointer ud)
+{
+    static_cast<WebRTCApp*>(ud)->onServerConnected(s, r);
+}
+
+void WebRTCApp::onWebsocketClosed_s(SoupWebsocketConnection*, gpointer ud)
+{
+    static_cast<WebRTCApp*>(ud)->onWebsocketClosed();
+}
+
+void WebRTCApp::onWebsocketMessage_s(SoupWebsocketConnection* c, SoupWebsocketDataType d,
+                                      GBytes* m, gpointer ud)
+{ 
+    static_cast<WebRTCApp*>(ud)->onWebsocketMessage(c, d, m); 
+}

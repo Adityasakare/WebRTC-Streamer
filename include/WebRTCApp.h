@@ -33,7 +33,14 @@ private:
 
     void connectToServer();
     void registerWithServer();
+    void scheduleReconnect();
 
+    void onServerConnected(SoupSession*, GAsyncResult*);
+    void onWebsocketClosed();
+    void onWebsocketMessage(SoupWebsocketConnection*,SoupWebsocketDataType, GBytes*);
+    static void onServerConnected_s(SoupSession*, GAsyncResult*, gpointer);
+    static void onWebsocketClosed_s(SoupWebsocketConnection*, gpointer);
+    static void onWebsocketMessage_s(SoupWebsocketConnection*,SoupWebsocketDataType, GBytes*, gpointer);
     
 
 public:
