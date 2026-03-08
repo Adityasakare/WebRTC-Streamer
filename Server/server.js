@@ -135,7 +135,7 @@ const server = http.createServer((req, res) =>{
     }
 
     // hls.js req actual .m3u8 and .ts files - serves them
-    if(pathname.startsWith('/recordings'))
+    if(pathname.startsWith('/recordings/'))
     {
         const relative = pathname.slice('/recordings/'.length);
         const fpath = RECORDINGS_DIR + '/' + relative;
