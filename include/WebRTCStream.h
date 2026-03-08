@@ -47,10 +47,20 @@ private:
     bool                    m_pipelineReady;
 
     void buildPipeline(void);
+    void linkPayloaderToWebrtcbin(const std::string& devId, const std::string& payName);
+
+    void SendJson(JsonObject* root);
+
+    void onNegotiationNeeded(void);
+    void onOfferCreated(GstPromise* promise);
+    void onIceCandidate(guint mLineIndex, const gchar* candidate);
+    gboolean onBusMessage(GstBus* bus, GstMessage* msg);
 
 
     static void onNegotiationNeeded_s(GstElement*, gpointer);
     static void onIceCandidate_s(GstElement*, guint, gchar*, gpointer);
+    static void onOfferCreated_s(GstPromise*, gpointer);
+    static gboolean onBusMessage_s(GstBus*, GstMessage*, gpointer);
 };
 
 

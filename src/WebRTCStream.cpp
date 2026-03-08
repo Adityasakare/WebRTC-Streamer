@@ -186,4 +186,125 @@ void WebRTCStream::linkPayloaderToWebrtcbin(const std::string& devId, const std:
     gst_object_unref(pay);
 }
 
+void WebRTCStream::onNegotiationNeeded(void)
+{
+    Logger::getInstance().log(LogLevel::INFO, "[%s] Negotiation needed - creating offer for client=%s", m_displayName.c_str(), 
+                            m_pendingClientId.c_str());
 
+    GstPromise* p = gst_promise_new_with_change_func(onOfferCreated_s, this, nullptr);
+    g_signal_emit_by_name(m_webrtcbin, "create-oofer", nullptr, p);
+}
+
+void WebRTCStream::onOfferCreated(GstPromise* promise)
+{
+    GstWebRTCSessionDescription* offer = nullptr;
+    const GstStructure* reply = gst_promise_get_reply(promise);
+    gst_structure_get(reply, "offer", GST_TYPE_WEBRTC_SESSION_DESCRIPTION, &offer, nullptr);
+    gst_promise_unref(promise);
+
+    GstPromise* local = gst_promise_new();
+    g_signal_emit_by_name(m_webrtcbin, "set-local-description", offer, local);
+    gst_promise_interrupt(local);
+    gst_promise_unref(local);
+
+    gchar* sdpStr = gst_sdp_message_as_text(offer->sdp);
+
+    JsonObject* dataObj = json_object_new();
+    json_object_set_string_member(dataObj, "type", "offer");
+    json_object_set_string_member(dataObj, "sdp", sdpStr);
+
+    JsonObject* root = json_object_new();
+    json_object_set_string_member(root, "type", "streamer:offer");
+    json_object_set_string_member(root, "device", m_devicePath.c_str());
+    json_object_set_string_member(root, "username", m_userName.c_str());
+    json_object_set_string_member(root, "clientId", m_pendingClientId.c_str());
+    json_object_set_object_member(root, "data", dataObj);
+
+    SendJson(root);
+    g_free(sdpStr);
+    gst_webrtc_session_description_free(offer);
+
+    Logger::getInstance().log(LogLevel::INFO, "[%s] Offer sent to client=%s", m_displayName.c_str(), m_pendingClientId.c_str());
+}
+
+
+void WebRTCStream::handleMessage(const std::string& json)
+{
+    JsonParser* parser = json_parser_new();
+    if(!json_parser_load_from_data(parser, json.c_str(), -1, nullptr))
+    {
+        g_object_unref(parser);
+        return;
+    }
+
+    JsonObject* root = json_node_get_object(json_parser_get_root(parser));
+
+    // copy all values out before freeing parser
+    std::string type;
+    std::string clientId;
+    std::string sdp;
+    std::string iceCandidate;
+    gint64 sdpMLineIndex = 0;
+
+    if(json_object_has_member(root, "type"))
+        type = json_object_get_string_member(root, "type");
+
+    if(json_object_has_member(root, "clientId"))
+    {
+        gint64 id = json_object_get_int_member(root, "clientId");
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%", G_GINT64_FORMAT, id);
+        clientId = buf;
+    }
+
+     if(json_object_has_member(root, "data"))
+     {
+        JsonObject* data = json_object_get_object_member(root, "data");
+        if(data)
+        {
+            if(json_object_has_member(data, "sdp"))
+                sdp = json_object_get_string_member(data, "sdp");
+            if(json_object_has_member(data, "candidate"))
+                iceCandidate = json_object_get_string_member(data, "candidate");
+            if(json_object_has_member(data, "sdpMLineIndex"))
+                sdpMLineIndex = json_object_get_int_member(data, "sdpMLineIndex");
+        }
+     }
+
+    g_object_unref(parser);
+    
+    // Dispatch
+    if(type =="signal")
+    {
+        if(!clientId.empty())
+            m_pendingClientId = clientId;
+        if(!m_pipelineReady)
+            buildPipeline();
+        else
+        {
+            GstPromise* p = gst_promise_new_with_change_func(onOfferCreated_s, this, nullptr);
+            g_signal_emit_by_name(m_webrtcbin, "create-offer", nullptr, p);
+        }
+    }
+    else if(type == "sdp")
+    {
+        GstSDPMessage* sdpMsg = nullptr;
+        gst_sdp_message_new(&sdpMsg);
+        gst_sdp_message_parse_buffer((guint8*)sdp.c_str(), sdp.size(), sdpMsg);
+
+        GstWebRTCSessionDescription* answer = gst_webrtc_session_description_new(GST_WEBRTC_SDP_TYPE_ANSWER, sdpMsg);
+        GstPromise* p = gst_promise_new();
+        g_signal_emit_by_name(m_webrtcbin, "set-remote-description", answer, p);
+        gst_promise_interrupt(p);
+        gst_promise_unref(p);
+        gst_webrtc_session_description_free(answer);
+        Logger::getInstance().log(LogLevel::INFO, "[%s] SDP answer applied", m_displayName.c_str());
+    }
+    else if(type == "ice")
+    {
+        if(!iceCandidate.empty())
+            g_signal_emit_by_name(m_webrtcbin, "add-ice-candidate", (guint)sdpMLineIndex, iceCandidate.c_str());
+    }
+
+        
+}
