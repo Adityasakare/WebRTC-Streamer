@@ -227,6 +227,21 @@ void WebRTCStream::onOfferCreated(GstPromise* promise)
     Logger::getInstance().log(LogLevel::INFO, "[%s] Offer sent to client=%s", m_displayName.c_str(), m_pendingClientId.c_str());
 }
 
+void WebRTCStream::onIceCandidate(guint mlineIndex, const gchar* candidate)
+{
+    JsonObject* dataObj = json_object_new();
+    json_object_set_int_member   (dataObj, "sdpMLineIndex", mlineIndex);
+    json_object_set_string_member(dataObj, "candidate", candidate);
+
+    JsonObject* root = json_object_new();
+    json_object_set_string_member(root, "type", "streamer:ice");
+    json_object_set_string_member(root, "device", m_devicePath.c_str());
+    json_object_set_string_member(root, "clientId", m_pendingClientId.c_str());
+    json_object_set_object_member(root, "data", dataObj);
+
+    SendJson(root);
+}
+
 
 void WebRTCStream::handleMessage(const std::string& json)
 {
@@ -253,7 +268,7 @@ void WebRTCStream::handleMessage(const std::string& json)
     {
         gint64 id = json_object_get_int_member(root, "clientId");
         char buf[32];
-        snprintf(buf, sizeof(buf), "%", G_GINT64_FORMAT, id);
+        snprintf(buf, sizeof(buf), "%" G_GINT64_FORMAT, id);
         clientId = buf;
     }
 
@@ -305,6 +320,73 @@ void WebRTCStream::handleMessage(const std::string& json)
         if(!iceCandidate.empty())
             g_signal_emit_by_name(m_webrtcbin, "add-ice-candidate", (guint)sdpMLineIndex, iceCandidate.c_str());
     }
-
         
 }
+
+void WebRTCStream::SendJson(JsonObject* root)
+{
+    JsonNode* node = json_node_init_object(json_node_alloc(), root);
+    JsonGenerator* gen = json_generator_new();
+    json_generator_set_root(gen, node);
+    gchar* text = json_generator_to_data(gen, nullptr);
+
+    soup_websocket_connection_send_text(m_wsConn, text);
+
+    g_free(text);
+    g_object_unref(gen);
+    json_node_free(node);
+}
+
+gboolean WebRTCStream::onBusMessage(GstBus*, GstMessage* msg)
+{
+    switch (GST_MESSAGE_TYPE(msg))
+    {
+    case GST_MESSAGE_ERROR:
+    {
+        GError* err = nullptr;
+        gchar* dbg = nullptr;
+        gst_message_parse_error(msg, &err, &dbg);
+        Logger::getInstance().log(LogLevel::ERROR, "[%s] %s | %s", m_displayName.c_str(), err->message, dbg ? dbg : "");
+        g_error_free(err);
+        g_free(dbg);
+        break;
+    }
+    case GST_MESSAGE_WARNING:
+    {
+        GError* err = nullptr;
+        gchar* dbg = nullptr;
+        gst_message_parse_warning(msg, &err, &dbg);
+        Logger::getInstance().log(LogLevel::WARNING, "[%s] %s | %s", m_displayName.c_str(), err->message, dbg ? dbg : "");
+        g_error_free(err);
+        g_free(dbg);
+        break;
+    }    
+    
+    default:
+        break;
+    }
+    return TRUE;
+}
+
+// Gstreamer callbacks - these forwarded to class methods
+
+void WebRTCStream::onNegotiationNeeded_s(GstElement*, gpointer ud)
+{
+    static_cast<WebRTCStream*>(ud)->onNegotiationNeeded();
+}
+
+void WebRTCStream::onOfferCreated_s(GstPromise* p, gpointer ud)
+{
+    static_cast<WebRTCStream*>(ud)->onOfferCreated(p);
+}
+
+void WebRTCStream::onIceCandidate_s(GstElement*, guint m, gchar* ch, gpointer ud)
+{
+    static_cast<WebRTCStream*>(ud)->onIceCandidate(m, ch);
+}
+
+gboolean WebRTCStream::onBusMessage_s(GstBus* b, GstMessage* m, gpointer ud)
+{
+    return static_cast<WebRTCStream*>(ud)->onBusMessage(b, m);
+}
+
