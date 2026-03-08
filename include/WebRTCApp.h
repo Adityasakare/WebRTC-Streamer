@@ -1,0 +1,39 @@
+#ifndef WEBRTCAPP_H
+#define WEBRTCAPP_H
+
+#ifndef GST_USE_UNSTABLE_API
+#define GST_USE_UNSTABLE_API
+#endif
+
+#include <glib.h>
+#include <libsoup/soup.h>
+#include <json-glib/json-glib.h>
+#include <string>
+#include <map>
+
+#include "Logger.h"
+#include "Config.h"
+#include "CameraConfig.h"
+
+
+class WebRTCStream;
+
+class WebRTCApp
+{
+private:
+    std::string              m_serverUrl;
+    std::string              m_userName;
+    int                      m_reconnectCount;
+
+    GMainLoop*               m_loop;
+    SoupWebsocketConnection* m_wsConn;
+
+    CameraConfig                         m_config;
+    std::map<std::string, WebRTCStream*> m_streams;
+public:
+    WebRTCApp();
+    ~WebRTCApp();
+};
+
+
+#endif
