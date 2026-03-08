@@ -83,12 +83,12 @@ wss.on('connection', (conn) =>{
 
         if(msg.type === 'streamer:ice')
         {
-            console.log('[server] streamer:ice — routing to client ' + msg.clientId);  
             const client = clients.get(parseInt(msg.clientId));
             if(client)
             {
                 send(client.conn, {
                     type:   'ice',
+                    device: msg.device,
                     data:   msg.data
                 });
             }

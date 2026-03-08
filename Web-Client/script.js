@@ -1,5 +1,4 @@
-let pc = null;
-let currentDevice = null;
+const peerConnections = {};  
 let ws = null;
 let myClientId = null;
 
@@ -61,8 +60,8 @@ function handleMessage(msg)
 
     if (msg.type === 'offer') 
     {
-        currentDevice = msg.device;
-        createPeerConnection();
+        const device = msg.device;
+        const pc = createPeerConnection(device);
 
         pc.setRemoteDescription(new RTCSessionDescription(msg.data))
         .then(() => pc.createAnswer())
@@ -70,15 +69,17 @@ function handleMessage(msg)
         .then(() => {
           ws.send(JSON.stringify({
               type:   'client:answer',
-              device: currentDevice,
+              device: device,
               data:   pc.localDescription
           }));
-          log('Answer sent');
+          log('Answer sent for ' + device);
       });
     }
 
     if (msg.type === 'ice') 
     {
+        const device = msg.device;
+        const pc = peerConnections[device];
         if (pc && msg.data) 
         {
             pc.addIceCandidate(new RTCIceCandidate(msg.data));
@@ -93,17 +94,45 @@ function requestStream(device)
     ws.send(JSON.stringify({type: 'client:request_stream', device}));
 }
 
-function createPeerConnection() 
+function createPeerConnection(device) 
 {
-    pc = new RTCPeerConnection({
+    
+    if (peerConnections[device]) {
+        peerConnections[device].close();
+    }
+
+    const pc = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
     });
 
+    peerConnections[device] = pc;
+
+    // Create video element for this camera if it doesn't exist
+    let videoEl = document.getElementById('video_' + device.replace('/dev/', ''));
+    if (!videoEl) {
+        const container = document.createElement('div');
+        container.id = 'container_' + device.replace('/dev/', '');
+
+        const label = document.createElement('p');
+        label.innerText = device;
+
+        videoEl = document.createElement('video');
+        videoEl.id = 'video_' + device.replace('/dev/', '');
+        videoEl.autoplay = true;
+        videoEl.muted = true;
+        videoEl.setAttribute('playsinline', '');
+        videoEl.width = 640;
+        videoEl.height = 480;
+        videoEl.controls = true;
+
+        container.appendChild(label);
+        container.appendChild(videoEl);
+        document.getElementById('streams').appendChild(container);
+    }
+
     pc.ontrack = (event) => {
-        const video = document.getElementById('video');
-        video.srcObject = event.streams[0];
-        document.getElementById('stream').style.display = 'block';
-        log('Stream playing');
+        videoEl.srcObject = event.streams[0];
+        log('Stream playing: ' + device);
     };
 
     pc.onicecandidate = (event) => {
@@ -112,11 +141,12 @@ function createPeerConnection()
             console.log('Sending ICE candidate', event.candidate);
             ws.send(JSON.stringify({
                 type:   'client:ice',
-                device: currentDevice,
+                device: device,
                 data:   event.candidate
             }));
         }else {
         console.log('ICE gathering complete'); 
     }
     };
+    return pc;
 }
