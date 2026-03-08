@@ -27,7 +27,7 @@ public:
     ~WebRTCStream();
 
     WebRTCStream(const WebRTCStream&)             = delete;
-    WebRTCStream& operator=(const ~WebRTCStream&) = delete;
+    WebRTCStream& operator=(const WebRTCStream&) = delete;
 
     void stop();
     void handleMessage(const std::string& json);
