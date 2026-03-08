@@ -21,5 +21,8 @@
 #define H264_KEY_INT_MAX     30    
 #define RTP_PAYLOAD_TYPE     96
 
+// ============== Reconnect policy ==============
+#define RECONNECT_DELAY_MS   2000
+#define MAX_RECONNECT_TRIES  0   
 
 #endif
