@@ -31,7 +31,7 @@ WebRTCApp::~WebRTCApp()
     }
     if(m_loop)
     {
-        g_object_unref(m_loop);
+        g_main_loop_unref(m_loop);
         m_loop = nullptr;
     }
 }

@@ -78,7 +78,7 @@ void WebRTCStream::buildPipeline(void)
     g_mkdir_with_parents(RECORDING_DIR, 0755);
     time_t now = time(nullptr);
     char ts[32];
-    strftime(ts, sizeof(ts), "%Y%M%d_%H%M%S", localtime(&now));
+    strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", localtime(&now));
     char recPath[256];
     snprintf(recPath, sizeof(recPath), "%s/%s_%s_%%05d.mp4", RECORDING_DIR, devId.c_str(), ts);
 
@@ -90,7 +90,7 @@ void WebRTCStream::buildPipeline(void)
         " videoconvert ! videoscale ! "
         " video/x-raw,width=%d,height=%d,framerate=%d/1 ! "
         " videoconvert ! "
-        " clockoverlay valignment=bottom halignment=left "
+        " clockoverlay valignment=top halignment=right "
             " font-desc=\"Sans Bold 18\" "
             " time-format=\"%%Y-%%m-%%d  %%H:%%M:%%S\" "
             " shading-value=80 ! "
@@ -131,8 +131,15 @@ void WebRTCStream::buildPipeline(void)
             m_pipeline = nullptr;
             return;
         }
+        
+        gst_element_set_state(m_pipeline, GST_STATE_READY);
+       linkPayloaderToWebrtcbin(devId, payName);
 
-        // BUs watch
+        // Bus watch
+        GstBus* bus = gst_pipeline_get_bus(GST_PIPELINE(m_pipeline));
+        gst_bus_add_watch(bus, onBusMessage_s, this);
+        gst_object_unref(bus);
+
         GArray* trans = nullptr;
         g_signal_emit_by_name(m_webrtcbin, "get-transceivers", &trans);
         if(trans && trans->len > 0)
@@ -146,7 +153,13 @@ void WebRTCStream::buildPipeline(void)
         g_signal_connect(m_webrtcbin, "on-ice-candidate", G_CALLBACK(onIceCandidate_s), this);
 
         GstStateChangeReturn sc = gst_element_set_state(m_pipeline, GST_STATE_PLAYING);
-
+/////////////////////////////////////////////////////////////////////////////////////
+        Logger::getInstance().log(LogLevel::INFO,
+        "[%s] State change result: %s", m_displayName.c_str(),
+        sc == GST_STATE_CHANGE_ASYNC   ? "ASYNC" :
+        sc == GST_STATE_CHANGE_SUCCESS ? "SUCCESS" :
+        sc == GST_STATE_CHANGE_NO_PREROLL ? "NO_PREROLL" : "FAILURE");
+///////////////////////////////////////////////////////////////////////////////////
         if(sc == GST_STATE_CHANGE_FAILURE)
         {
             Logger::getInstance().log(LogLevel::ERROR, "[%s] Pipeline failed to reach PLAYING", m_devicePath.c_str());
@@ -192,7 +205,7 @@ void WebRTCStream::onNegotiationNeeded(void)
                             m_pendingClientId.c_str());
 
     GstPromise* p = gst_promise_new_with_change_func(onOfferCreated_s, this, nullptr);
-    g_signal_emit_by_name(m_webrtcbin, "create-oofer", nullptr, p);
+    g_signal_emit_by_name(m_webrtcbin, "create-offer", nullptr, p);
 }
 
 void WebRTCStream::onOfferCreated(GstPromise* promise)
@@ -240,6 +253,8 @@ void WebRTCStream::onIceCandidate(guint mlineIndex, const gchar* candidate)
     json_object_set_object_member(root, "data", dataObj);
 
     SendJson(root);
+    Logger::getInstance().log(LogLevel::INFO,
+        "[%s] Sending ICE candidate mline=%u", m_displayName.c_str(), mlineIndex);
 }
 
 
