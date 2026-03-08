@@ -62,7 +62,100 @@ void WebRTCStream::stop(void)
     m_pendingClientId.clear();
 }
 
+void WebRTCStream::buildPipeline(void)
+{
+    // Extract device id from path: /dev/video0 -> video0
+    std::string devId = m_devicePath;
+    size_t slash = devId.rfind('/');
+    if(slash != std::string::npos)
+        devId = devId.substr(slash + 1);
 
+    std::string webrtcName = "webrtcbin_" + devId;
+    std::string payName = "pay_" + devId;
+    std::string teeName = "tee_" + devId;
+
+    // Recording file pattern
+    g_mkdir_with_parents(RECORDING_DIR, 0755);
+    time_t now = time(nullptr);
+    char ts[32];
+    strftime(ts, sizeof(ts), "%Y%M%d_%H%M%S", localtime(&now));
+    char recPath[256];
+    snprintf(recPath, sizeof(recPath), "%s/%s_%s_%%05d.mp4", RECORDING_DIR, devId.c_str(), ts);
+
+
+    char desc[4056];
+        snprintf(desc, sizeof(desc),
+        " webrtcbin name=%s bundle-policy=max-bundle stun-server=%s latency=100 "
+        " v4l2src device=%s do-timestamp=true ! "
+        " videoconvert ! videoscale ! "
+        " video/x-raw,width=%d,height=%d,framerate=%d/1 ! "
+        " videoconvert ! "
+        " clockoverlay valignment=bottom halignment=left "
+            " font-desc=\"Sans Bold 18\" "
+            " time-format=\"%%Y-%%m-%%d  %%H:%%M:%%S\" "
+            " shading-value=80 ! "
+        " x264enc bitrate=%d speed-preset=ultrafast tune=zerolatency key-int-max=%d ! "
+        " video/x-h264,profile=baseline ! "
+        " h264parse config-interval=-1 ! "
+        " tee name=%s "
+        " %s. ! queue max-size-buffers=10 leaky=downstream ! "
+        " rtph264pay config-interval=-1 pt=%d aggregate-mode=zero-latency name=%s "
+        " %s. ! queue max-size-buffers=300 leaky=downstream ! "
+        " splitmuxsink location=%s max-size-time=%" G_GUINT64_FORMAT
+        " muxer-factory=mp4mux send-keyframe-requests=false async-finalize=true ",
+        webrtcName.c_str(), STUN_SERVER,
+        m_devicePath.c_str(),
+        VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FRAMERATE,
+        H264_BITRATE_KBPS, H264_KEY_INT_MAX,
+        teeName.c_str(),
+        teeName.c_str(), RTP_PAYLOAD_TYPE, payName.c_str(),
+        teeName.c_str(), recPath,
+        (guint64)RECORDING_CHUNKS_SECS * GST_SECOND);
+
+        GError* err = nullptr;
+        m_pipeline = gst_parse_launch(desc, &err);
+        if(err)
+        {
+            Logger::getInstance().log(LogLevel::ERROR, "[%s] Pipeline parse failed: %s",
+                                        m_displayName.c_str(), err->message);
+            g_error_free(err);
+            return;
+        }
+
+        m_webrtcbin = gst_bin_get_by_name(GST_BIN(m_pipeline), webrtcName.c_str());
+        if(!m_webrtcbin)
+        {
+            Logger::getInstance().log(LogLevel::ERROR, "[%s] webrtcbin not found",
+                                        m_displayName.c_str());
+            gst_object_unref(m_pipeline);
+            m_pipeline = nullptr;
+            return;
+        }
+
+        // BUs watch
+        GArray* trans = nullptr;
+        g_signal_emit_by_name(m_webrtcbin, "get-transceivers", &trans);
+        if(trans && trans->len > 0)
+        {
+            GstWebRTCRTPTransceiver* t = g_array_index(trans, GstWebRTCRTPTransceiver*, 0);
+            g_object_set(t, "direction", GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_SENDONLY, nullptr);
+            g_array_unref(trans);
+        }
+
+        g_signal_connect(m_webrtcbin, "on-negotiation-needed", G_CALLBACK(onNegotiationNeeded_s), this);
+        g_signal_connect(m_webrtcbin, "on-ice-candidate", G_CALLBACK(onIceCandidate_s), this);
+
+        GstStateChangeReturn sc = gst_element_set_state(m_pipeline, GST_STATE_PLAYING);
+
+        if(sc == GST_STATE_CHANGE_FAILURE)
+        {
+            Logger::getInstance().log(LogLevel::ERROR, "[%s] Pipeline failed to reach PLAYING", m_devicePath.c_str());
+            return;
+        }
+
+        m_pipelineReady = true;
+        Logger::getInstance().log(LogLevel::INFO, "[%s] Pipeline PLAYING - Recording to %s", m_displayName.c_str(), recPath);
+}
 
 
 

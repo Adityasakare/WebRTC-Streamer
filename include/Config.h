@@ -16,7 +16,10 @@
 #define RECORDING_DIR           "recordings/"
 #define RECORDING_CHUNKS_SECS   30
 
-
+// ============== WebRTC stream encoding (low latency) ==============
+#define H264_BITRATE_KBPS    1000   
+#define H264_KEY_INT_MAX     30    
+#define RTP_PAYLOAD_TYPE     96
 
 
 #endif

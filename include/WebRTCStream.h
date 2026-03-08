@@ -45,6 +45,12 @@ private:
     GstElement*             m_webrtcbin;
 
     bool                    m_pipelineReady;
+
+    void buildPipeline(void);
+
+
+    static void onNegotiationNeeded_s(GstElement*, gpointer);
+    static void onIceCandidate_s(GstElement*, guint, gchar*, gpointer);
 };
 
 
