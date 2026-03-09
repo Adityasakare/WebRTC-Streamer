@@ -7,7 +7,12 @@
 #include <vector>
 #include <fstream>
 #include <sstream>
+ #include <unistd.h>
 #include "Logger.h"
+
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <linux/videodev2.h>
 
 struct CameraEntry
 {
@@ -55,6 +60,15 @@ public:
             displayName = (nameStart != std::string::npos)
                         ? displayName.substr(nameStart)
                         : devicePath;
+            
+            if (!isCameraWorking(devicePath))
+            {
+                Logger::getInstance().log(LogLevel::WARNING, "CameraConfig: skipping '%s' — not found, not accessible, or not a video capture device",
+                devicePath.c_str());
+                continue;
+            }
+                
+            
             // store the parsed cameras
             m_cameras.push_back({devicePath, displayName});
             logger.log(LogLevel::INFO, "CameraConfig: [%s] -> '%s'", filePath.c_str(), displayName.c_str());
@@ -86,6 +100,31 @@ public:
         return m_cameras.size();
     }
 
+    bool isCameraWorking(const std::string& devicePath)
+    {
+        //check file exists and is readable
+        if (access(devicePath.c_str(), F_OK | R_OK) != 0)
+            return false;
+
+        // open the device
+        int fd = open(devicePath.c_str(), O_RDONLY | O_NONBLOCK);
+        if (fd < 0)
+            return false;
+
+        // query device capabilities via ioctl
+        struct v4l2_capability cap;
+        int ret = ioctl(fd, VIDIOC_QUERYCAP, &cap);
+        close(fd);
+
+        if (ret < 0)
+            return false;
+
+        // confirm it supports video capture
+        if (!(cap.device_caps & V4L2_CAP_VIDEO_CAPTURE))
+            return false;
+
+        return true;
+    }
 };
 
 #endif
